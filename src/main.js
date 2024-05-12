@@ -5,7 +5,12 @@ function setup() {
   createCanvas(1, 1);
 
   // Initialize some globals
-  pixy = new Pixy([0, 0], [width, height], [10, 20]);
+  board = new Pixy([0, 0], [width, height], [10, 20]);
+
+  for (let x = 0; x < board.res[0]; x++)
+    for (let y = 0; y < board.res[1]; y++)
+      board.setPixel([x, y], color('red'));
+  board.updatePixels();
 
   // Resize the canvas to fit the screen
   windowResized();
@@ -16,20 +21,22 @@ function setup() {
 function draw() {
   background(50);
 
-  pixy.setPixel([0, 0], color('red'));
-  pixy.updatePixels();
-
+  // Display the board
   fill(0);
-  rect(...pixy.off, ...pixy.size);
-  pixy.display();
+  rect(...board.off, ...board.size);
+  board.display();
 }
 
 function windowResized() {
   resizeCanvas(windowWidth, windowHeight);
 
-  pixy.size[1] = height;
-  pixy.size[0] = height / (pixy.size[1] / pixy.size[0]);
-  pixy.off[0] = (width - pixy.size[0]) / 2;
+  board.size[1] = height;
+  board.size[0] = height * (board.res[0] / board.res[1]);
+  board.off[0] = (width - board.size[0]) / 2;
 }
 
 // all full and select and rotate to make everything fall and delete everything as quickly as possible
+
+function mouseClicked() {
+  
+}

@@ -1,1 +1,1 @@
-let pixy;
+let board;
