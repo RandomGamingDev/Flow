@@ -1,5 +1,15 @@
 const floor = Math.floor;
 
+// It just uses the colors of the rainbow
+const ShapeColor = [
+  [148, 0, 211], // VIOLET
+  [0, 0, 255], // BLUE
+  [255, 127, 0], // ORANGE
+  [255, 255, 0], // YELLOW
+  [0, 255, 0], // GREEN
+  [75, 0, 130], // INDIGO
+  [255, 0, 0], // RED
+];
 const Shapes = [ // (This can be changed to make certain shapes illegal)
   [ // I
     "XXXX"
@@ -67,12 +77,12 @@ const draw_tile = (x, y, s, c) => {
   }
   pop();
 }
-const draw_piece = (pieceID, loc, tile_size) => {
+const draw_piece = (pieceID, loc, tile_size, col) => {
   const piece = Shapes[pieceID];
   for (const i in piece)
     for (const j in piece[i])
       if (piece[i][j] == "X")
-        draw_tile(loc[0] + (j - piece[i].length / 2) * tile_size, loc[1] + (i - piece.length / 2) * tile_size, tile_size, [255, 0, 0]);
+        draw_tile(loc[0] + (j - piece[i].length / 2) * tile_size, loc[1] + (i - piece.length / 2) * tile_size, tile_size, col);
 }
 
 const TilePalette = {
@@ -155,7 +165,10 @@ function draw() {
 
   // Display the board
   rect(...board.off, ...board.size);
-  board.display();
+  // board.display(); // Debug
+  for (const i in board.res[1])
+    for (const j in board.res[0])
+      
 
   // Render Side Panels
   const panel_w = 0.6 * board.size[0];
@@ -167,17 +180,18 @@ function draw() {
     held_piece = 0;
     const hold_piece_panel_height = panel_h * 0.2;
     rect(panel_x, panel_y, panel_w, hold_piece_panel_height);
-    draw_piece(ShapeID.O, [panel_x + panel_w / 2, panel_y + hold_piece_panel_height / 2], 50);
+
+    held_piece = ShapeID.O; // TEMP
+    if (held_piece != null)
+      draw_piece(held_piece, [panel_x + panel_w / 2, panel_y + hold_piece_panel_height / 2], 50, ShapeColor[held_piece]);
   }
 
   { // Display which shapes are available (top left)
     const piece_window_y = panel_y + panel_h * 0.3;
     const piece_window_h = panel_h * 0.7;
     rect(panel_x, piece_window_y, panel_w, piece_window_h);
-    //  + 57
-    for (let i = 0; i < piece_window.length; i++) {
-      draw_piece(piece_window[i], [panel_x + panel_w / 2, piece_window_y + piece_window_h * (i + 0.5) / 4], 50);
-    }
+    for (let i = 0; i < piece_window.length; i++)
+      draw_piece(piece_window[i], [panel_x + panel_w / 2, piece_window_y + piece_window_h * (i + 0.5) / 4], 50, ShapeColor[piece_window[i]]);
   }
 
   { // Display the score, level (the speed the game's going at), and number of lines (award for riskier moves like clearing 4 lines with a line) top right
