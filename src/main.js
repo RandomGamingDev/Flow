@@ -1,4 +1,5 @@
 const floor = Math.floor;
+const reverse_str = (s) => s.split("").reverse().join("");
 
 // It just uses the colors of the rainbow
 const ShapeColor = [
@@ -82,15 +83,24 @@ const get_selection_shape = (serialized_selection, dims_type) => {
       if (serialized_selection.length == 3)
         serialized_selection = rotate_shape(serialized_selection);
 
-      console.log(serialized_selection);
-
       // Test regular and flipped versions
+      let i = ShapeDimID.D3x2
+      for (; i < Shapes.length; i++) {
+        if (array_eq(serialized_selection, Shapes[i]))
+          break;
 
-      /*
-      for (let i = 0; i < 2; i++)
-      */
+        const temp = reverse_str(serialized_selection[0]);
+        serialized_selection[0] = reverse_str(serialized_selection[1]);
+        serialized_selection[1] = temp;
 
-      break;
+        if (array_eq(serialized_selection, Shapes[i]))
+          break;
+      }
+
+      if (i == Shapes.length)
+        return null;
+      else
+        return i;
     case ShapeDimID.D2x2: // Just ShapeID.O
       return ShapeID.O;
     case ShapeDimID.D4x1: // Just ShapeID.I
@@ -98,6 +108,28 @@ const get_selection_shape = (serialized_selection, dims_type) => {
     case null:
       return null;
   }
+}
+const get_shape_lowest_tiles = (serialized_selection) => {
+  let lowest = [];
+  for (let x = 0; x < serialized_selection[0].length; x++) {
+    let y = serialized_selection.length - 1;
+    for (; y >= 0; y--)
+      if (serialized_selection[y][x] === 'X')
+        break;
+    lowest.push(y);
+  }
+
+  return lowest;
+}
+const is_empty_below = (shape_lowest_tiles, bounding_box) => {
+  for (let i = 0; i < shape_lowest_tiles.length; i++) {
+    const x = bounding_box[0][0] + i;
+    for (let y = bounding_box[0][1] + shape_lowest_tiles[i] + 1; y < board.res[1]; y++)
+      if (!array_eq(board.getPixel([x, y]), TilePalette.Empty))
+        return false;
+  }
+
+  return true;
 }
 
 // All valid shape dimensions
@@ -196,12 +228,34 @@ let piece_window = [];
 const add_random_piece = () => piece_window.push(get_random_piece());
 for (let i = 0; i < 4; i++)
   add_random_piece();
-const roll_piece_window = () => {
-  piece_window.splice(0, 1)
-  add_random_piece();
-};
 
 let held_piece = null;
+class FallingPiece {
+  static gravity_multiplier;
+
+  constructor(x, y, s, piece_type, serialized_piece) {
+    this.x = x;
+    this.y = y;
+    this.s = s;
+    this.piece_type = piece_type;
+    this.serialized_piece = serialized_piece;
+
+    this.y_vel = 0;
+  }
+
+  tick() {
+
+  }
+
+  render() {
+    draw_piece(held_piece, [panel_x + panel_w / 2, panel_y + hold_piece_panel_height / 2], display_piece_tile_size, ShapeColor[held_piece]);
+  }
+};
+let falling_pieces = [];
+
+let score = 0;
+let level = 0;
+let lines = 0; // Maybe store best??
 
 const get_mouse_pos = () => [mouseX, mouseY];
 const array_eq = (arr1, arr2) => {
@@ -253,6 +307,9 @@ function draw() {
   for (let x = 0; x < board.res[0]; x++)
     for (let y = 0; y < board.res[1]; y++)
       draw_tile(board.off[0] + x * tile_size, board.off[1] + y * tile_size, tile_size, Array.from(board.getPixel([x, y])));
+
+  // Draw the falling pieces
+
 
   // Render Side Panels
   const panel_w = 0.5 * board.size[0];
@@ -334,8 +391,22 @@ function mouseClicked() {
       const dims_type = get_bounding_dims_type(bounding_dims);
       const serialized_selection = get_serialized_selection(bounding_box);
       const shape = get_selection_shape(serialized_selection, dims_type);
-      console.log(shape);
+
       // Calculate what's underneath and if we can play it falling down and make the falling correspond to the game fall/flow speed
+      const shape_window_i = piece_window.lastIndexOf(shape); // Check held lastIndexOf and combine with held
+      if (shape_window_i != -1) {
+        const shape_lowest_tiles = get_shape_lowest_tiles(serialized_selection);
+        const empty_below = is_empty_below(shape_lowest_tiles, bounding_box);
+        if (empty_below) {
+          falling_pieces.push(new FallingPiece(0, 0, 10, shape, serialized_selection));
+          for (const tile of selected)
+            board.setPixel(tile, TilePalette.Empty);
+          selected = [];
+          piece_window[shape_window_i] = get_random_piece();
+        }
+      }
+      else
+        Sounds.Wrong.play();
     }
   }
 
