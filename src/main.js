@@ -264,7 +264,6 @@ const flow_tick = () => {
     if (i == selected.length)
       break;
   }
-  console.log(tallest_column_height);
   const y = column_heights[x];
   column_heights[x]++;
 
@@ -275,14 +274,14 @@ const flow_tick = () => {
   return true;
 }
 
+const piece_window_size = 4;
 let piece_window = [];
 const add_random_piece = () => piece_window.push(get_random_piece());
-for (let i = 0; i < 4; i++)
+for (let i = 0; i < piece_window_size; i++)
   add_random_piece();
 
-let held_piece = null;
 let score = 0;
-const starting_flow_delay = 5000; // Delay before being divided by the level
+const starting_flow_delay = 2000; // Delay before being divided by the level
 let level = 1;
 let lines = 0; // Maybe store best??
 class FallingPiece {
@@ -312,7 +311,7 @@ class FallingPiece {
     draw_serialized_piece(
       this.serialized_piece,
       [board.off[0] + this.x * tile_size, board.off[1] + this.y * tile_size],
-      this.s,
+      this.s * tile_size,
       ShapeColor[this.piece_type]
     );
   }
@@ -401,22 +400,12 @@ function draw() {
   const panel_h = height - 2 * panel_y;
   const display_piece_tile_size = panel_w * 0.15;
 
-  { // Display the held shape (bottom left)
-    held_piece = 0;
-    const hold_piece_panel_height = panel_h * 0.2;
-    rect(panel_x, panel_y, panel_w, hold_piece_panel_height, default_rounding);
-
-    held_piece = ShapeID.O; // TEMP
-    if (held_piece != null)
-      draw_piece(held_piece, [panel_x + panel_w / 2, panel_y + hold_piece_panel_height / 2], display_piece_tile_size, ShapeColor[held_piece]);
-  }
 
   { // Display which shapes are available (top left)
-    const piece_window_y = panel_y + panel_h * 0.3;
-    const piece_window_h = panel_h * 0.7;
-    rect(panel_x, piece_window_y, panel_w, piece_window_h, default_rounding);
+    rect(panel_x, panel_y, panel_w, panel_h, default_rounding);
+
     for (let i = 0; i < piece_window.length; i++)
-      draw_piece(piece_window[i], [panel_x + panel_w / 2, piece_window_y + piece_window_h * (i + 0.5) / 4], display_piece_tile_size, ShapeColor[piece_window[i]]);
+      draw_piece(piece_window[i], [panel_x + panel_w / 2, panel_y + panel_h * (i + 0.5) / piece_window_size], display_piece_tile_size, ShapeColor[piece_window[i]]);
   }
 
   { // Display the score, level (the speed the game's going at), and number of lines (award for riskier moves like clearing 4 lines with a line) top right
@@ -509,7 +498,7 @@ function mouseClicked() {
             new FallingPiece(
               bounding_box[0][0] + bounding_dims[0] / 2,
               bounding_box[0][1] + bounding_dims[1] / 2,
-              tile_size, shape, serialized_selection
+              1, shape, serialized_selection
             )
           );
 
@@ -528,15 +517,11 @@ function mouseClicked() {
           selected = [];
           piece_window[shape_window_i] = get_random_piece();
 
-          // 100
-          // 300
-          // 500
-          // 800
-
           // Calculate the score, level, and lines cleared
           const lines_cleared = old_tallest_column_height - tallest_column_height;
           lines += lines_cleared;
-          score += lines_cleared * lines_cleared;
+          score += (4 + lines_cleared * lines_cleared) * level;
+          level = 1 + floor(lines / 8);
 
           Sounds.Done.play();
         }
