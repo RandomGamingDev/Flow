@@ -77,6 +77,9 @@ const get_bounding_dims_type = (dims) => {
   return null;
 };
 const get_selection_shape = (serialized_selection, dims_type) => {
+  // Make sure that we don't modify the original serialized selection
+  serialized_selection = [...serialized_selection];
+
   switch (dims_type) {
     case ShapeDimID.D3x2: // Anything from ShapeID.J to ShapeID.Z
       // Transpose the selection
@@ -173,13 +176,13 @@ const draw_tile = (x, y, s, c) => {
   }
   pop();
 }
-const draw_piece = (pieceID, loc, tile_size, col) => {
-  const piece = Shapes[pieceID];
-  for (const i in piece)
-    for (const j in piece[i])
-      if (piece[i][j] === 'X')
-        draw_tile(loc[0] + (j - piece[i].length / 2) * tile_size, loc[1] + (i - piece.length / 2) * tile_size, tile_size, col);
+const draw_serialized_piece = (serialized_piece, loc, tile_size, col) => {
+  for (const i in serialized_piece)
+    for (const j in serialized_piece[i])
+      if (serialized_piece[i][j] === 'X')
+        draw_tile(loc[0] + (j - serialized_piece[i].length / 2) * tile_size, loc[1] + (i - serialized_piece.length / 2) * tile_size, tile_size, col);
 }
+const draw_piece = (pieceID, loc, tile_size, col) => draw_serialized_piece(Shapes[pieceID], loc, tile_size, col);
 
 const TilePalette = {
   Empty: [0, 0, 0, 0],
@@ -190,12 +193,15 @@ const TilePalette = {
 const Sounds = {
   Select: null,
   Unselect: null,
-  Wrong: null
+  Wrong: null,
+  Done: null
 }
 
 const default_rounding = 10;
 
 let board;
+let column_heights = [];
+const get_tile_size = () => board.size[0] / board.res[0];
 let selected = [];
 // Get the box containing all tiles (returns [<top left>, <bottom right>])
 const get_bounding_box = () => {
@@ -223,6 +229,19 @@ const get_serialized_selection = (bounding_box) => {
 
   return serialized_selection;
 }
+let last_flow = new Date();
+// Progress a random column by one (returns false if unsuccessful/reached end) which should mean a game end
+const flow_tick = () => {
+  const x = floor(Math.random() * column_heights.length);
+  const y = column_heights[x];
+  column_heights[x]++;
+
+  if (y >= board.res[1]) // Add some code so that selected columns don't tick
+    return false;
+
+  board.setPixel([x, y], TilePalette.Tile);
+  return true;
+}
 
 let piece_window = [];
 const add_random_piece = () => piece_window.push(get_random_piece());
@@ -230,8 +249,12 @@ for (let i = 0; i < 4; i++)
   add_random_piece();
 
 let held_piece = null;
+let score = 0;
+const starting_flow_delay = 5000; // Delay before being divided by the level
+let level = 1;
+let lines = 0; // Maybe store best??
 class FallingPiece {
-  static gravity_multiplier;
+  static gravity_multiplier = 0.01;
 
   constructor(x, y, s, piece_type, serialized_piece) {
     this.x = x;
@@ -243,19 +266,26 @@ class FallingPiece {
     this.y_vel = 0;
   }
 
+  // Tells you whether or not the object's active true if yes false if no
   tick() {
+    this.y_vel += level * FallingPiece.gravity_multiplier;
+    this.y += this.y_vel;
 
+    return this.y - this.serialized_piece.length < board.res[1];
   }
 
   render() {
-    draw_piece(held_piece, [panel_x + panel_w / 2, panel_y + hold_piece_panel_height / 2], display_piece_tile_size, ShapeColor[held_piece]);
+    const tile_size = get_tile_size();
+
+    draw_serialized_piece(
+      this.serialized_piece,
+      [board.off[0] + this.x * tile_size, board.off[1] + this.y * tile_size],
+      this.s,
+      ShapeColor[this.piece_type]
+    );
   }
 };
 let falling_pieces = [];
-
-let score = 0;
-let level = 0;
-let lines = 0; // Maybe store best??
 
 const get_mouse_pos = () => [mouseX, mouseY];
 const array_eq = (arr1, arr2) => {
@@ -272,6 +302,7 @@ function preload() {
   Sounds.Select = loadSoundAsset("select");
   Sounds.Unselect = loadSoundAsset("erase");
   Sounds.Wrong = loadSoundAsset("wrong");
+  Sounds.Done = loadSoundAsset("done");
 }
 
 function setup() {
@@ -283,10 +314,12 @@ function setup() {
   // Set the tiles
   for (let x = 0; x < board.res[0]; x++) {
     let y = 0;
-    for (; y < 15 + floor(Math.random() * 3); y++)
+    const column_height = 15 + floor(Math.random() * 3);
+    for (; y < column_height; y++)
       board.setPixel([x, y], TilePalette.Tile);
     for (; y < board.res[1]; y++)
       board.setPixel([x, y], TilePalette.Empty);
+    column_heights.push(column_height);
   }
   board.updatePixels();
 
@@ -299,7 +332,8 @@ function draw() {
   background(50);
   fill(0);
 
-  const tile_size = board.size[0] / board.res[0];
+  const now = new Date();
+  const tile_size = get_tile_size();
 
   // Display the board
   rect(...board.off, ...board.size);
@@ -309,7 +343,19 @@ function draw() {
       draw_tile(board.off[0] + x * tile_size, board.off[1] + y * tile_size, tile_size, Array.from(board.getPixel([x, y])));
 
   // Draw the falling pieces
+  for (let i = 0; i < falling_pieces.length;) {
+    const falling_piece = falling_pieces[i];
 
+    // Just dispose the inactive pieces instantly we haven't hit a performance limit that requires pooling yet
+    if (!falling_piece.tick()) {
+      falling_pieces.splice(i, 1);
+      continue;
+    }
+
+    // If not disposed render and go on to the next
+    falling_piece.render();
+    i++;
+  }
 
   // Render Side Panels
   const panel_w = 0.5 * board.size[0];
@@ -341,6 +387,12 @@ function draw() {
     const score_panel_h = panel_h * 0.3;
     rect(score_panel_x, panel_y, panel_w, score_panel_h, default_rounding);
   }
+
+  // Handle flow (level only makes speed rise to the root)
+  if (now - last_flow > starting_flow_delay / sqrt(level)) {
+    flow_tick(); // Check for whether or not you hit a loss later
+    last_flow = now;
+  }
 }
 
 function windowResized() {
@@ -368,6 +420,7 @@ function mouseClicked() {
       return;
   }
   const selected_tile = board.getPixel(tile_coord);
+  const tile_size = get_tile_size();
 
   // Unselect a tile
   if (array_eq(selected_tile, TilePalette.Selected)) {
@@ -383,7 +436,6 @@ function mouseClicked() {
   else if (selected.length < 4 && array_eq(selected_tile, TilePalette.Tile)) {
     selected.push(tile_coord);
     board.setPixel(tile_coord, TilePalette.Selected);
-    Sounds.Select.play();
 
     if (selected.length == 4) {
       const bounding_box = get_bounding_box();
@@ -397,17 +449,32 @@ function mouseClicked() {
       if (shape_window_i != -1) {
         const shape_lowest_tiles = get_shape_lowest_tiles(serialized_selection);
         const empty_below = is_empty_below(shape_lowest_tiles, bounding_box);
+
         if (empty_below) {
-          falling_pieces.push(new FallingPiece(0, 0, 10, shape, serialized_selection));
-          for (const tile of selected)
+          falling_pieces.push(
+            new FallingPiece(
+              bounding_box[0][0] + bounding_dims[0] / 2,
+              bounding_box[0][1] + bounding_dims[1] / 2,
+              tile_size, shape, serialized_selection
+            )
+          );
+          for (const tile of selected) {
             board.setPixel(tile, TilePalette.Empty);
+            column_heights[tile[0]]--;
+          }
+          console.log(column_heights);
           selected = [];
           piece_window[shape_window_i] = get_random_piece();
+          Sounds.Done.play();
         }
+        else
+          Sounds.Wrong.play();
       }
       else
         Sounds.Wrong.play();
     }
+    else
+      Sounds.Select.play();
   }
 
   // Make it visible that the tile chosen is selected
