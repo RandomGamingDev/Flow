@@ -1,6 +1,8 @@
 const floor = Math.floor;
 const reverse_str = (s) => s.split("").reverse().join("");
 
+let font;
+
 // It just uses the colors of the rainbow
 const ShapeColor = [
   [148, 0, 211], // VIOLET
@@ -201,6 +203,34 @@ const default_rounding = 10;
 
 let board;
 let column_heights = [];
+let tallest_column_height = 0;
+// Returns the new tallest height and takes in the column to be shortened
+const recalc_tallest_column_height = (shortened_column_x) => {
+  console.log("Flag0");
+  console.log(column_heights[shortened_column_x]);
+  console.log(tallest_column_height);
+
+  // Check if it's even the tallest
+  if (column_heights[shortened_column_x] < tallest_column_height)
+    return tallest_column_height;
+
+  console.log("Flag1");
+
+  // Check if another column has the same (or great just in case) height
+  /*
+  for (let i = 0; i < shortened_column_x; i++)
+    if (column_heights[i] >= tallest_column_height)
+      return tallest_column_height;
+  for (let i = shortened_column_x + 1; i < board.res[0]; i++)
+    if (column_heights[i] >= tallest_column_height)
+      return tallest_column_height;
+    */
+
+  console.log("Flag2");
+
+  // If it's truly the tallest then decrease it
+  return tallest_column_height - 1;
+};
 const get_tile_size = () => board.size[0] / board.res[0];
 let selected = [];
 // Get the box containing all tiles (returns [<top left>, <bottom right>])
@@ -232,7 +262,20 @@ const get_serialized_selection = (bounding_box) => {
 let last_flow = new Date();
 // Progress a random column by one (returns false if unsuccessful/reached end) which should mean a game end
 const flow_tick = () => {
-  const x = floor(Math.random() * column_heights.length);
+  let x;
+  // Get an unselected column
+  while (true) {
+    x = floor(Math.random() * column_heights.length);
+    if (x > tallest_column_height)
+      tallest_column_height = x;
+
+    let i = 0;
+    for (; i < selected.length; i++)
+      if (x == selected[i][0])
+        break;
+    if (i == selected.length)
+      break;
+  }
   const y = column_heights[x];
   column_heights[x]++;
 
@@ -298,6 +341,7 @@ const array_eq = (arr1, arr2) => {
 }
 
 function preload() {
+  font = loadFont("assets/font/fff-forward.ttf");
   const loadSoundAsset = (filename) => loadSound(`assets/sound/${ filename }.wav`);
   Sounds.Select = loadSoundAsset("select");
   Sounds.Unselect = loadSoundAsset("erase");
@@ -329,6 +373,7 @@ function setup() {
 }
 
 function draw() {
+  textFont(font);
   background(50);
   fill(0);
 
@@ -384,8 +429,23 @@ function draw() {
 
   { // Display the score, level (the speed the game's going at), and number of lines (award for riskier moves like clearing 4 lines with a line) top right
     const score_panel_x = board.off[0] + 1.1 * board.size[0];
-    const score_panel_h = panel_h * 0.3;
+    const score_panel_h = panel_h * 0.6;
     rect(score_panel_x, panel_y, panel_w, score_panel_h, default_rounding);
+
+    fill(255);
+    textSize(0.07 * board.size[0]);
+    textAlign(CENTER, CENTER);
+    textLeading(0.1 * board.size[0]);
+    text(
+      "Score:" + '\n' +
+      String(score) + '\n\n' +
+      "Level:" + '\n' +
+      String(level) + '\n\n' +
+      "Lines:" + '\n' +
+      String(lines),
+      score_panel_x + panel_w / 2,
+      panel_y + score_panel_h / 2
+    );
   }
 
   // Handle flow (level only makes speed rise to the root)
@@ -460,14 +520,32 @@ function mouseClicked() {
               tile_size, shape, serialized_selection
             )
           );
+
+          const old_tallest_column_height = tallest_column_height;
           // Update column_heights and remove the selected
           for (const tile of selected) {
             board.setPixel(tile, TilePalette.Empty);
-            column_heights[tile[0]]--;
+            const tile_x = tile[0];
+
+            // Recalculate the tallest column height
+            tallest_column_height = recalc_tallest_column_height(tile_x);
+            column_heights[tile_x]--;
           }
+
           // Reset the selection and update the board
           selected = [];
           piece_window[shape_window_i] = get_random_piece();
+
+          // 100
+          // 300
+          // 500
+          // 800
+
+          // Calculate the score, level, and lines cleared
+          const lines_cleared = old_tallest_column_height - tallest_column_height;
+          lines += lines_cleared;
+          score += lines_cleared * lines_cleared;
+
           Sounds.Done.play();
         }
         else
