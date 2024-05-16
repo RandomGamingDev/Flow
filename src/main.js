@@ -438,6 +438,7 @@ function mouseClicked() {
     board.setPixel(tile_coord, TilePalette.Selected);
 
     if (selected.length == 4) {
+      // Get the bounding box, shape type, and then use it to identify validity as well as do the rest of the needed calculations
       const bounding_box = get_bounding_box();
       const bounding_dims = get_bounding_box_dims(bounding_box);
       const dims_type = get_bounding_dims_type(bounding_dims);
@@ -451,6 +452,7 @@ function mouseClicked() {
         const empty_below = is_empty_below(shape_lowest_tiles, bounding_box);
 
         if (empty_below) {
+          // Add a falling piece entity (gets cleared upon exiting the scren)
           falling_pieces.push(
             new FallingPiece(
               bounding_box[0][0] + bounding_dims[0] / 2,
@@ -458,11 +460,12 @@ function mouseClicked() {
               tile_size, shape, serialized_selection
             )
           );
+          // Update column_heights and remove the selected
           for (const tile of selected) {
             board.setPixel(tile, TilePalette.Empty);
             column_heights[tile[0]]--;
           }
-          console.log(column_heights);
+          // Reset the selection and update the board
           selected = [];
           piece_window[shape_window_i] = get_random_piece();
           Sounds.Done.play();
