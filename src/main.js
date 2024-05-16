@@ -206,27 +206,17 @@ let column_heights = [];
 let tallest_column_height = 0;
 // Returns the new tallest height and takes in the column to be shortened
 const recalc_tallest_column_height = (shortened_column_x) => {
-  console.log("Flag0");
-  console.log(column_heights[shortened_column_x]);
-  console.log(tallest_column_height);
-
   // Check if it's even the tallest
   if (column_heights[shortened_column_x] < tallest_column_height)
     return tallest_column_height;
 
-  console.log("Flag1");
-
   // Check if another column has the same (or great just in case) height
-  /*
   for (let i = 0; i < shortened_column_x; i++)
     if (column_heights[i] >= tallest_column_height)
       return tallest_column_height;
   for (let i = shortened_column_x + 1; i < board.res[0]; i++)
     if (column_heights[i] >= tallest_column_height)
       return tallest_column_height;
-    */
-
-  console.log("Flag2");
 
   // If it's truly the tallest then decrease it
   return tallest_column_height - 1;
@@ -266,8 +256,6 @@ const flow_tick = () => {
   // Get an unselected column
   while (true) {
     x = floor(Math.random() * column_heights.length);
-    if (x > tallest_column_height)
-      tallest_column_height = x;
 
     let i = 0;
     for (; i < selected.length; i++)
@@ -276,6 +264,7 @@ const flow_tick = () => {
     if (i == selected.length)
       break;
   }
+  console.log(tallest_column_height);
   const y = column_heights[x];
   column_heights[x]++;
 
@@ -359,6 +348,9 @@ function setup() {
   for (let x = 0; x < board.res[0]; x++) {
     let y = 0;
     const column_height = 15 + floor(Math.random() * 3);
+    if (column_height > tallest_column_height)
+      tallest_column_height = column_height;
+
     for (; y < column_height; y++)
       board.setPixel([x, y], TilePalette.Tile);
     for (; y < board.res[1]; y++)
