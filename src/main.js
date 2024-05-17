@@ -1,6 +1,8 @@
 const floor = Math.floor;
 const reverse_str = (s) => s.split("").reverse().join("");
 
+const background_color = 10;
+
 let font;
 
 // It just uses the colors of the rainbow
@@ -203,6 +205,12 @@ const default_rounding = 10;
 
 let board;
 let column_heights = [];
+let average_column_height = 0;
+/*
+const recalc_average_column_height = (shortened_column_x) => {
+
+}
+*/
 let tallest_column_height = 0;
 // Returns the new tallest height and takes in the column to be shortened
 const recalc_tallest_column_height = (shortened_column_x) => {
@@ -337,6 +345,61 @@ function preload() {
   Sounds.Done = loadSoundAsset("done");
 }
 
+
+class BackgroundParticle {
+  static particle_distance_limit = 0.2;
+
+  constructor() {
+    this.x = Math.random();
+    this.y = Math.random();
+    this.r = 0.001 + Math.random() * 0.01;
+    const particle_speed = 0.005;
+    this.x_vel = Math.random() * particle_speed;
+    this.y_vel = Math.random() * particle_speed;
+  }
+
+  tick() {
+    // Wall bouncing
+    this.x += this.x_vel;
+    this.y += this.y_vel; 
+    if (this.x < 0 || this.x > 1)
+      this.x_vel *= -1;
+    if (this.y < 0 || this.y > 1)
+      this.y_vel *= -1;
+  }
+
+  render(particle_list) {
+    const render_x = this.x * width;
+    const render_y = this.y * height;
+
+    // Draw the particle itself
+    circle(render_x, render_y, this.r * board.size[0]);
+
+    // Linking the particles
+    push();
+    for (const particle of particle_list) {
+      const particle_dist = dist(this.x, this.y, particle.x, particle.y) / sqrt(2);
+      if (particle_dist >= BackgroundParticle.particle_distance_limit)
+        continue;
+
+      const brightness = background_color + particle_dist / BackgroundParticle.particle_distance_limit * 0.3 * (255 - background_color);
+      stroke(brightness);
+      line(render_x, render_y, particle.x * width, particle.y * height);
+    }
+    pop();
+  }
+};
+const num_background_particles = 25;
+let background_particles = [];
+for (let i = 0; i < num_background_particles; i++)
+  background_particles.push(new BackgroundParticle());
+const particle_background = () => {
+  for (const particle of background_particles) {
+    particle.tick();
+    particle.render(background_particles);
+  }
+}
+
 function setup() {
   createCanvas(windowWidth, windowHeight);
 
@@ -358,6 +421,7 @@ function setup() {
   }
   board.updatePixels();
 
+  // Initialize some settings
   windowResized();
   noSmooth();
   noStroke();
@@ -365,7 +429,8 @@ function setup() {
 
 function draw() {
   textFont(font);
-  background(50);
+  background(background_color);
+  particle_background();
   fill(0);
 
   const now = new Date();
@@ -402,7 +467,7 @@ function draw() {
 
 
   { // Display which shapes are available (top left)
-    rect(panel_x, panel_y, panel_w, panel_h, default_rounding);
+    //rect(panel_x, panel_y, panel_w, panel_h, default_rounding);
 
     for (let i = 0; i < piece_window.length; i++)
       draw_piece(piece_window[i], [panel_x + panel_w / 2, panel_y + panel_h * (i + 0.5) / piece_window_size], display_piece_tile_size, ShapeColor[piece_window[i]]);
@@ -411,7 +476,7 @@ function draw() {
   { // Display the score, level (the speed the game's going at), and number of lines (award for riskier moves like clearing 4 lines with a line) top right
     const score_panel_x = board.off[0] + 1.1 * board.size[0];
     const score_panel_h = panel_h * 0.6;
-    rect(score_panel_x, panel_y, panel_w, score_panel_h, default_rounding);
+    //rect(score_panel_x, panel_y, panel_w, score_panel_h, default_rounding);
 
     fill(255);
     textSize(0.07 * board.size[0]);
@@ -428,6 +493,30 @@ function draw() {
       panel_y + score_panel_h / 2
     );
   }
+
+  // Losing screen
+  push();
+  {
+    // Darken everything
+    fill(0, 0, 0, 150);
+    rect(0, 0, width, height);
+
+    // Popup you lost
+    fill(0);
+    const lose_w = 0.9 * board.size[0];
+    const lose_h = 0.4 * board.size[0];
+    rect((width - lose_w) / 2, (height - lose_h) / 2, lose_w, lose_h, default_rounding);
+
+    // Lose and stats
+    fill(255);
+    text(
+      "You lost!" + '\n' +
+      "Your score:",
+      width / 2,
+      height / 2
+    );
+  }
+  pop();
 
   // Handle flow (level only makes speed rise to the root)
   if (now - last_flow > starting_flow_delay / sqrt(level)) {
