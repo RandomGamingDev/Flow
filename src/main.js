@@ -317,6 +317,34 @@ class FallingPiece {
   }
 };
 let falling_pieces = [];
+class LineClearAnimation {
+  static lifetime = 200;
+
+  constructor(y, h) {
+    this.y = y;
+    this.h = h;
+
+    this.creation_time = new Date();
+  }
+
+  // Tells you whether or not the object's active true if yes false if no
+  render() {
+    const tile_size = get_tile_size();
+    console.log(tile_size);
+
+    push();
+    {
+      const brightness = 2 * abs((new Date() - this.creation_time) / LineClearAnimation.lifetime - 0.5);
+      if (brightness > 1)
+        return;
+
+      fill(brightness * 255);
+      rect(board.off[0], board.off[1] + this.y * tile_size, board.size[0], this.h * tile_size);
+    }
+    pop();
+  }
+};
+let line_clear_animations = [];
 
 const get_mouse_pos = () => [mouseX, mouseY];
 const array_eq = (arr1, arr2) => {
@@ -377,6 +405,15 @@ function draw() {
   for (let x = 0; x < board.res[0]; x++)
     for (let y = 0; y < board.res[1]; y++)
       draw_tile(board.off[0] + x * tile_size, board.off[1] + y * tile_size, tile_size, Array.from(board.getPixel([x, y])));
+
+  console.log(line_clear_animations);
+  // Draw the line clear animation
+  for (let i = 0; i < line_clear_animations.length; i++) {
+    if (line_clear_animations[i].render())
+      falling_pieces.splice(i, 1);
+    else
+      i++;
+  }
 
   // Draw the falling pieces
   for (let i = 0; i < falling_pieces.length;) {
@@ -519,6 +556,9 @@ function mouseClicked() {
 
           // Calculate the score, level, and lines cleared
           const lines_cleared = old_tallest_column_height - tallest_column_height;
+          if (lines_cleared > 0)
+            line_clear_animations.push(new LineClearAnimation(bounding_box[0][1], bounding_dims[1]));
+
           lines += lines_cleared;
           score += (4 + lines_cleared * lines_cleared) * level;
           level = 1 + floor(lines / 8);
