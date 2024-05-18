@@ -206,12 +206,14 @@ const default_rounding = 10;
 let board;
 let column_heights = [];
 let average_column_height = 0;
-/*
-const recalc_average_column_height = (shortened_column_x) => {
-
-}
-*/
 let tallest_column_height = 0;
+
+// For increase a column's size by n
+const increase_column = (i, n) => {
+  column_heights[i] += n
+  if (column_heights[i] > tallest_column_height)
+    tallest_column_height = column_heights[i];
+}
 // Returns the new tallest height and takes in the column to be shortened
 const recalc_tallest_column_height = (shortened_column_x) => {
   // Check if it's even the tallest
@@ -273,7 +275,7 @@ const flow_tick = () => {
       break;
   }
   const y = column_heights[x];
-  column_heights[x]++;
+  increase_column(x, 1);
 
   if (y >= board.res[1]) // Add some code so that selected columns don't tick
     return false;
@@ -326,7 +328,7 @@ class FallingPiece {
 };
 let falling_pieces = [];
 class LineClearAnimation {
-  static lifetime = 200;
+  static lifetime = 500;
 
   constructor(y, h) {
     this.y = y;
@@ -338,18 +340,22 @@ class LineClearAnimation {
   // Tells you whether or not the object's active true if yes false if no
   render() {
     const tile_size = get_tile_size();
-    console.log(tile_size);
 
     push();
     {
-      const brightness = 2 * abs((new Date() - this.creation_time) / LineClearAnimation.lifetime - 0.5);
-      if (brightness > 1)
-        return;
+      const age = (new Date() - this.creation_time) / LineClearAnimation.lifetime;
+      if (age >= 1)
+        return false;
 
-      fill(brightness * 255);
+      const relative_brightness = 1 - 2 * abs(age - 0.5);
+      const brightness = relative_brightness * 150;
+
+      fill(brightness, brightness, brightness, brightness);
       rect(board.off[0], board.off[1] + this.y * tile_size, board.size[0], this.h * tile_size);
     }
     pop();
+
+    return true;
   }
 };
 let line_clear_animations = [];
@@ -382,8 +388,8 @@ class BackgroundParticle {
     this.y = Math.random();
     this.r = 0.001 + Math.random() * 0.01;
     const particle_speed = 0.005;
-    this.x_vel = Math.random() * particle_speed;
-    this.y_vel = Math.random() * particle_speed;
+    this.x_vel = (Math.random() - 0.5) * 2 * particle_speed;
+    this.y_vel = (Math.random() - 0.5) * 2 * particle_speed;
   }
 
   tick() {
@@ -471,14 +477,14 @@ function draw() {
     for (let y = 0; y < board.res[1]; y++)
       draw_tile(board.off[0] + x * tile_size, board.off[1] + y * tile_size, tile_size, Array.from(board.getPixel([x, y])));
 
-  console.log(line_clear_animations);
   // Draw the line clear animation
   for (let i = 0; i < line_clear_animations.length; i++) {
     if (line_clear_animations[i].render())
-      falling_pieces.splice(i, 1);
-    else
       i++;
+    else
+      line_clear_animations.splice(i, 1);
   }
+
 
   // Draw the falling pieces
   for (let i = 0; i < falling_pieces.length;) {
@@ -532,6 +538,7 @@ function draw() {
   }
 
   // Losing screen
+  /*
   push();
   {
     // Darken everything
@@ -554,6 +561,7 @@ function draw() {
     );
   }
   pop();
+  */
 
   // Handle flow (level only makes speed rise to the root)
   if (now - last_flow > starting_flow_delay / sqrt(level)) {
@@ -588,6 +596,13 @@ function mouseClicked() {
   }
   const selected_tile = board.getPixel(tile_coord);
   const tile_size = get_tile_size();
+
+  const wrong = () => {
+    Sounds.Wrong.play();
+    for (const tile of selected)
+      board.setPixel(tile, TilePalette.Tile);
+    selected = [];
+  };
 
   // Unselect a tile
   if (array_eq(selected_tile, TilePalette.Selected)) {
@@ -646,7 +661,7 @@ function mouseClicked() {
           // Calculate the score, level, and lines cleared
           const lines_cleared = old_tallest_column_height - tallest_column_height;
           if (lines_cleared > 0)
-            line_clear_animations.push(new LineClearAnimation(bounding_box[0][1], bounding_dims[1]));
+            line_clear_animations.push(new LineClearAnimation(bounding_box[0][1] + bounding_dims[1] - lines_cleared, lines_cleared));
 
           lines += lines_cleared;
           score += (4 + lines_cleared * lines_cleared) * level;
@@ -655,10 +670,10 @@ function mouseClicked() {
           Sounds.Done.play();
         }
         else
-          Sounds.Wrong.play();
+          wrong();
       }
       else
-        Sounds.Wrong.play();
+        wrong();
     }
     else
       Sounds.Select.play();
