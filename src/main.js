@@ -1,3 +1,28 @@
+function setCookie(name,value,exp_days) {
+  var d = new Date();
+  d.setTime(d.getTime() + (exp_days*24*60*60*1000));
+  var expires = "expires=" + d.toGMTString();
+  document.cookie = name + "=" + value + ";" + expires + ";path=/;SameSite=Lax";
+}
+
+function getCookie(name) {
+  var cname = name + "=";
+  var decodedCookie = decodeURIComponent(document.cookie);
+  var ca = decodedCookie.split(';');
+  for(var i = 0; i < ca.length; i++){
+      var c = ca[i];
+      while(c.charAt(0) == ' '){
+          c = c.substring(1);
+      }
+      if(c.indexOf(cname) == 0){
+          return c.substring(cname.length, c.length);
+      }
+  }
+  return "";
+}
+
+const in_desktop_mode = () => width / board.res[0] > height / board.res[1];
+
 const floor = Math.floor;
 const reverse_str = (s) => s.split("").reverse().join("");
 
@@ -205,7 +230,6 @@ const default_rounding = 10;
 
 let board;
 let column_heights = [];
-let average_column_height = 0;
 let tallest_column_height = 0;
 
 // For increase a column's size by n
@@ -214,6 +238,10 @@ const increase_column = (i, n) => {
   if (column_heights[i] > tallest_column_height)
     tallest_column_height = column_heights[i];
 }
+// Checks whether or not the player's lost the game
+const about_to_lose = () => tallest_column_height >= board.res[1] - 1;
+const lost = () => tallest_column_height >= board.res[1];
+
 // Returns the new tallest height and takes in the column to be shortened
 const recalc_tallest_column_height = (shortened_column_x) => {
   // Check if it's even the tallest
@@ -287,8 +315,11 @@ const flow_tick = () => {
 const piece_window_size = 4;
 let piece_window = [];
 const add_random_piece = () => piece_window.push(get_random_piece());
-for (let i = 0; i < piece_window_size; i++)
-  add_random_piece();
+const initialize_piece_window = () => {
+  for (let i = 0; i < piece_window_size; i++) 
+    add_random_piece();
+};
+initialize_piece_window();
 
 let score = 0;
 const starting_flow_delay = 2000; // Delay before being divided by the level
@@ -330,9 +361,10 @@ let falling_pieces = [];
 class LineClearAnimation {
   static lifetime = 500;
 
-  constructor(y, h) {
+  constructor(y, h, c = [1, 1, 1, 1]) {
     this.y = y;
     this.h = h;
+    this.c = c;
 
     this.creation_time = new Date();
   }
@@ -350,7 +382,7 @@ class LineClearAnimation {
       const relative_brightness = 1 - 2 * abs(age - 0.5);
       const brightness = relative_brightness * 150;
 
-      fill(brightness, brightness, brightness, brightness);
+      fill(brightness * this.c[0], brightness * this.c[1], brightness * this.c[2], brightness * this.c[3]);
       rect(board.off[0], board.off[1] + this.y * tile_size, board.size[0], this.h * tile_size);
     }
     pop();
@@ -370,6 +402,12 @@ const array_eq = (arr1, arr2) => {
   return true;
 }
 
+let music;
+
+const Images = {
+  RestartIcon: null
+};
+
 function preload() {
   font = loadFont("assets/font/fff-forward.ttf");
   const loadSoundAsset = (filename) => loadSound(`assets/sound/${ filename }.wav`);
@@ -377,6 +415,8 @@ function preload() {
   Sounds.Unselect = loadSoundAsset("erase");
   Sounds.Wrong = loadSoundAsset("wrong");
   Sounds.Done = loadSoundAsset("done");
+  music = loadSound("assets/music/Limousines - TrackTribe.mp3");
+  Images.RestartIcon = loadImage("assets/image/restart.png");
 }
 
 
@@ -434,16 +474,14 @@ const particle_background = () => {
   }
 }
 
-function setup() {
-  createCanvas(windowWidth, windowHeight);
+let highscore = getCookie("highscore");
+highscore = highscore == undefined ? 0 : Number(highscore);
 
-  // Initialize some globals
-  board = new Pixy([0, 0], [width, height], [12, 20]);
-
-  // Set the tiles
+// Setup the tiles and surrounding context data
+const initialize_tiles = () => {
   for (let x = 0; x < board.res[0]; x++) {
     let y = 0;
-    const column_height = 15 + floor(Math.random() * 3);
+    const column_height = 13 + floor(Math.random() * 3);
     if (column_height > tallest_column_height)
       tallest_column_height = column_height;
 
@@ -454,11 +492,24 @@ function setup() {
     column_heights.push(column_height);
   }
   board.updatePixels();
+}
+
+function setup() {
+  createCanvas(windowWidth, windowHeight);
+
+  // Initialize some globals
+  board = new Pixy([0, 0], [width, height], [12, 20]);
+
+  initialize_tiles();
 
   // Initialize some settings
   windowResized();
   noSmooth();
   noStroke();
+
+  // Start playing the background music
+  music.setVolume(0.6);
+  music.loop();
 }
 
 function draw() {
@@ -478,6 +529,8 @@ function draw() {
       draw_tile(board.off[0] + x * tile_size, board.off[1] + y * tile_size, tile_size, Array.from(board.getPixel([x, y])));
 
   // Draw the line clear animation
+  if (line_clear_animations.length < 1 && about_to_lose())
+    line_clear_animations.push(new LineClearAnimation(board.res[1] - 1, 1, [1, 0, 0, 1]));
   for (let i = 0; i < line_clear_animations.length; i++) {
     if (line_clear_animations[i].render())
       i++;
@@ -502,69 +555,98 @@ function draw() {
   }
 
   // Render Side Panels
-  const panel_w = 0.5 * board.size[0];
-  const panel_y = 0.1 * board.size[0];
-  const panel_x = board.off[0] - panel_w - 0.1 * board.size[0];
+  const desktop_mode = in_desktop_mode();
+  const panel_w = desktop_mode ? 0.5 * board.size[0] : width;
+  const panel_y = desktop_mode ? 0.1 * board.size[0] : 0;
+  const panel_x = desktop_mode ? board.off[0] - panel_w - 0.1 * board.size[0] : 0;
   const panel_h = height - 2 * panel_y;
-  const display_piece_tile_size = panel_w * 0.15;
-
+  const display_piece_tile_size = desktop_mode ? panel_w * 0.15 : panel_w * 0.055;
 
   { // Display which shapes are available (top left)
     //rect(panel_x, panel_y, panel_w, panel_h, default_rounding);
 
     for (let i = 0; i < piece_window.length; i++)
-      draw_piece(piece_window[i], [panel_x + panel_w / 2, panel_y + panel_h * (i + 0.5) / piece_window_size], display_piece_tile_size, ShapeColor[piece_window[i]]);
+      draw_piece(
+        piece_window[i],
+        desktop_mode ? 
+          [panel_x + panel_w / 2, panel_y + panel_h * (i + 0.5) / piece_window_size] :
+          [panel_x + panel_w * (i + 0.5) / piece_window_size, panel_y + display_piece_tile_size * 1.5],
+        display_piece_tile_size,
+        ShapeColor[piece_window[i]]
+      );
   }
 
   { // Display the score, level (the speed the game's going at), and number of lines (award for riskier moves like clearing 4 lines with a line) top right
-    const score_panel_x = board.off[0] + 1.1 * board.size[0];
+    const score_panel_x = desktop_mode ? board.off[0] + 1.1 * board.size[0] : 0;
     const score_panel_h = panel_h * 0.6;
     //rect(score_panel_x, panel_y, panel_w, score_panel_h, default_rounding);
 
-    fill(255);
-    textSize(0.07 * board.size[0]);
-    textAlign(CENTER, CENTER);
-    textLeading(0.1 * board.size[0]);
-    text(
-      "Score:" + '\n' +
-      String(score) + '\n\n' +
-      "Level:" + '\n' +
-      String(level) + '\n\n' +
-      "Lines:" + '\n' +
-      String(lines),
-      score_panel_x + panel_w / 2,
-      panel_y + score_panel_h / 2
-    );
+    push();
+    {
+      fill(255);
+      textSize(desktop_mode ? 0.07 * board.size[0] : 0.05 * board.size[0]);
+      textAlign(CENTER, CENTER);
+      textLeading(0.1 * board.size[0]);
+      const divider = desktop_mode ? '\n' : ' ';
+      text(
+        "Score:" + divider +
+        String(score) + divider + divider +
+        "Level:" + divider +
+        String(level) + divider + divider +
+        "Lines:" + divider +
+        String(lines),
+        score_panel_x + panel_w / 2,
+        desktop_mode ? panel_y + score_panel_h / 2 : panel_y + 0.25 * board.size[0]
+      );
+    }
+    pop();
   }
 
   // Losing screen
-  /*
-  push();
-  {
-    // Darken everything
-    fill(0, 0, 0, 150);
-    rect(0, 0, width, height);
+  if (lost()) {
+    push();
+    {
+      // Darken everything
+      fill(0, 0, 0, 150);
+      rect(0, 0, width, height);
 
-    // Popup you lost
-    fill(0);
-    const lose_w = 0.9 * board.size[0];
-    const lose_h = 0.4 * board.size[0];
-    rect((width - lose_w) / 2, (height - lose_h) / 2, lose_w, lose_h, default_rounding);
+      // Popup you lost
+      fill(0);
+      const lose_w = 0.9 * board.size[0];
+      const lose_h = 0.51 * board.size[0];
+      rect((width - lose_w) / 2, (height - lose_h) / 2, lose_w, lose_h, default_rounding);
 
-    // Lose and stats
-    fill(255);
-    text(
-      "You lost!" + '\n' +
-      "Your score:",
-      width / 2,
-      height / 2
-    );
+      // Lose and stats
+      textAlign(CENTER, CENTER);
+      textLeading(0.06 * board.size[0]);
+      fill(255);
+
+      // Title
+      textSize(0.075 * board.size[0]);
+      text(
+        "You lost!",
+        width / 2,
+        height / 2 - 0.1 * height
+      );
+
+      // Info
+      textSize(0.04 * board.size[0]);
+      text(
+        `Score: ${ score }` + '\n' +
+        (highscore < score ? "New Highscore!" : `High Score: ${ highscore }`),
+        width / 2,
+        height / 2 - 0.02 * height
+      );
+
+      // Restart
+      const restart_icon_size = 0.2 * board.size[0];
+      image(Images.RestartIcon, (width - restart_icon_size) / 2, (height - restart_icon_size) / 2 + 0.13 * board.size[0], restart_icon_size, restart_icon_size);
+    }
+    pop();
   }
-  pop();
-  */
 
   // Handle flow (level only makes speed rise to the root)
-  if (now - last_flow > starting_flow_delay / sqrt(level)) {
+  if (now - last_flow > starting_flow_delay / level) {
     flow_tick(); // Check for whether or not you hit a loss later
     last_flow = now;
   }
@@ -573,14 +655,50 @@ function draw() {
 function windowResized() {
   resizeCanvas(windowWidth, windowHeight);
 
-  board.size[1] = height;
-  board.size[0] = height * (board.res[0] / board.res[1]);
-  board.off[0] = (width - board.size[0]) / 2;
+  if (in_desktop_mode()) {
+    board.size[1] = height;
+    board.size[0] = height * (board.res[0] / board.res[1]);
+    board.off[0] = (width - board.size[0]) / 2;
+    board.off[1] = 0;
+  }
+  else {
+    board.size[0] = width;
+    board.size[1] = width * (board.res[1] / board.res[0]);
+    board.off[1] = height - board.size[1];
+    board.off[0] = 0;
+  }
 }
 
 // all full and select and rotate to make everything fall and delete everything as quickly as possible
 
 function mouseClicked() {
+  if (lost()) {
+    const restart_icon_size = 0.2 * board.size[0];
+    if (dist(mouseX, mouseY, width / 2, height / 2 + 0.13 * board.size[0]) < restart_icon_size / 2) {
+      // Complex reinitialization
+      // `board` included
+      column_heights = [];
+      tallest_column_height = 0;
+      initialize_tiles();
+      piece_window = [];
+      initialize_piece_window();
+
+      // No complex reinitialization
+      selected = [];
+      last_flow = new Date();
+      falling_pieces = [];
+      line_clear_animations = [];
+      if (score > highscore) {
+        highscore = score;
+        setCookie("highscore", highscore, 365);
+      }
+      score = 0;
+      level = 1;
+      lines = 0;
+    }
+    return;
+  }
+
   // Calculate the possible tile coordinate
   const tile_coord = 
     get_mouse_pos()
