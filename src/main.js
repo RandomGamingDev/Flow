@@ -1,3 +1,5 @@
+let mouse_was_pressed = false;
+
 function setCookie(name,value,exp_days) {
   var d = new Date();
   d.setTime(d.getTime() + (exp_days*24*60*60*1000));
@@ -650,6 +652,112 @@ function draw() {
     flow_tick(); // Check for whether or not you hit a loss later
     last_flow = now;
   }
+
+  if (mouseIsPressed) {
+    // Calculate the possible tile coordinate
+    const tile_coord = 
+      get_mouse_pos()
+        .map((v, i) =>
+          floor((v - board.off[i]) / board.size[i] * board.res[i])
+        );
+      
+    // Check whether the coordinates are in bound and return if they aren't
+    for (const i in tile_coord) {
+      const v = tile_coord[i];
+      if (v < 0 || v >= board.res[i])
+        return;
+    }
+    if (selected.length > 0) {
+      for (const selected_tile of selected) {
+        let j = 0;
+        for (; j < 2; j++)
+          if (tile_coord[j] != selected_tile[j])
+            break;
+        if (j >= 2)
+          return; 
+      }
+    }
+
+    const selected_tile = board.getPixel(tile_coord);
+    const tile_size = get_tile_size();
+
+    const wrong = () => {
+      Sounds.Wrong.play();
+      for (const tile of selected)
+        board.setPixel(tile, TilePalette.Tile);
+      selected = [];
+    };
+
+    // Select a tile
+    if (selected.length < 4 && array_eq(selected_tile, TilePalette.Tile)) {
+      selected.push(tile_coord);
+      board.setPixel(tile_coord, TilePalette.Selected);
+
+      if (selected.length == 4) {
+        // Get the bounding box, shape type, and then use it to identify validity as well as do the rest of the needed calculations
+        const bounding_box = get_bounding_box();
+        const bounding_dims = get_bounding_box_dims(bounding_box);
+        const dims_type = get_bounding_dims_type(bounding_dims);
+        const serialized_selection = get_serialized_selection(bounding_box);
+        const shape = get_selection_shape(serialized_selection, dims_type);
+
+        // Calculate what's underneath and if we can play it falling down and make the falling correspond to the game fall/flow speed
+        const shape_window_i = piece_window.lastIndexOf(shape); // Check held lastIndexOf and combine with held
+        if (shape_window_i != -1) {
+          const shape_lowest_tiles = get_shape_lowest_tiles(serialized_selection);
+          const empty_below = is_empty_below(shape_lowest_tiles, bounding_box);
+
+          if (empty_below) {
+            // Add a falling piece entity (gets cleared upon exiting the scren)
+            falling_pieces.push(
+              new FallingPiece(
+                bounding_box[0][0] + bounding_dims[0] / 2,
+                bounding_box[0][1] + bounding_dims[1] / 2,
+                1, shape, serialized_selection
+              )
+            );
+
+            const old_tallest_column_height = tallest_column_height;
+            // Update column_heights and remove the selected
+            for (const tile of selected) {
+              board.setPixel(tile, TilePalette.Empty);
+              const tile_x = tile[0];
+
+              // Recalculate the tallest column height
+              tallest_column_height = recalc_tallest_column_height(tile_x);
+              column_heights[tile_x]--;
+            }
+
+            // Reset the selection and update the board
+            selected = [];
+            piece_window[shape_window_i] = get_random_piece();
+
+            // Calculate the score, level, and lines cleared
+            const lines_cleared = old_tallest_column_height - tallest_column_height;
+            if (lines_cleared > 0)
+              line_clear_animations.push(new LineClearAnimation(bounding_box[0][1] + bounding_dims[1] - lines_cleared, lines_cleared));
+
+            lines += lines_cleared;
+            score += (4 + lines_cleared * lines_cleared) * level;
+            level = 1 + floor(lines / 8);
+
+            Sounds.Done.play();
+          }
+          else
+            wrong();
+        }
+        else
+          wrong();
+      }
+      else
+        Sounds.Select.play();
+    }
+
+    // Make it visible that the tile chosen is selected
+    board.updatePixels();
+  }
+
+  mouse_was_pressed = mouseIsPressed;
 }
 
 function windowResized() {
@@ -672,6 +780,7 @@ function windowResized() {
 // all full and select and rotate to make everything fall and delete everything as quickly as possible
 
 function mouseClicked() {
+  // Restart button
   if (lost()) {
     const restart_icon_size = 0.2 * board.size[0];
     if (dist(mouseX, mouseY, width / 2, height / 2 + 0.13 * board.size[0]) < restart_icon_size / 2) {
@@ -698,7 +807,9 @@ function mouseClicked() {
     }
     return;
   }
+}
 
+function mouseReleased() {
   // Calculate the possible tile coordinate
   const tile_coord = 
     get_mouse_pos()
@@ -712,18 +823,12 @@ function mouseClicked() {
     if (v < 0 || v >= board.res[i])
       return;
   }
-  const selected_tile = board.getPixel(tile_coord);
-  const tile_size = get_tile_size();
 
-  const wrong = () => {
-    Sounds.Wrong.play();
-    for (const tile of selected)
-      board.setPixel(tile, TilePalette.Tile);
-    selected = [];
-  };
+  const selected_tile = board.getPixel(tile_coord);
 
   // Unselect a tile
   if (array_eq(selected_tile, TilePalette.Selected)) {
+    console.log("test!")
     for (const i in selected)
       if (array_eq(selected[i], tile_coord)) {
         selected.splice(i, 1);
@@ -732,71 +837,4 @@ function mouseClicked() {
     board.setPixel(tile_coord, TilePalette.Tile);
     Sounds.Unselect.play();
   }
-  // Select a tile
-  else if (selected.length < 4 && array_eq(selected_tile, TilePalette.Tile)) {
-    selected.push(tile_coord);
-    board.setPixel(tile_coord, TilePalette.Selected);
-
-    if (selected.length == 4) {
-      // Get the bounding box, shape type, and then use it to identify validity as well as do the rest of the needed calculations
-      const bounding_box = get_bounding_box();
-      const bounding_dims = get_bounding_box_dims(bounding_box);
-      const dims_type = get_bounding_dims_type(bounding_dims);
-      const serialized_selection = get_serialized_selection(bounding_box);
-      const shape = get_selection_shape(serialized_selection, dims_type);
-
-      // Calculate what's underneath and if we can play it falling down and make the falling correspond to the game fall/flow speed
-      const shape_window_i = piece_window.lastIndexOf(shape); // Check held lastIndexOf and combine with held
-      if (shape_window_i != -1) {
-        const shape_lowest_tiles = get_shape_lowest_tiles(serialized_selection);
-        const empty_below = is_empty_below(shape_lowest_tiles, bounding_box);
-
-        if (empty_below) {
-          // Add a falling piece entity (gets cleared upon exiting the scren)
-          falling_pieces.push(
-            new FallingPiece(
-              bounding_box[0][0] + bounding_dims[0] / 2,
-              bounding_box[0][1] + bounding_dims[1] / 2,
-              1, shape, serialized_selection
-            )
-          );
-
-          const old_tallest_column_height = tallest_column_height;
-          // Update column_heights and remove the selected
-          for (const tile of selected) {
-            board.setPixel(tile, TilePalette.Empty);
-            const tile_x = tile[0];
-
-            // Recalculate the tallest column height
-            tallest_column_height = recalc_tallest_column_height(tile_x);
-            column_heights[tile_x]--;
-          }
-
-          // Reset the selection and update the board
-          selected = [];
-          piece_window[shape_window_i] = get_random_piece();
-
-          // Calculate the score, level, and lines cleared
-          const lines_cleared = old_tallest_column_height - tallest_column_height;
-          if (lines_cleared > 0)
-            line_clear_animations.push(new LineClearAnimation(bounding_box[0][1] + bounding_dims[1] - lines_cleared, lines_cleared));
-
-          lines += lines_cleared;
-          score += (4 + lines_cleared * lines_cleared) * level;
-          level = 1 + floor(lines / 8);
-
-          Sounds.Done.play();
-        }
-        else
-          wrong();
-      }
-      else
-        wrong();
-    }
-    else
-      Sounds.Select.play();
-  }
-
-  // Make it visible that the tile chosen is selected
-  board.updatePixels();
 }
