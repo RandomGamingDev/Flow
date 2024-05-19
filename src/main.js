@@ -828,7 +828,6 @@ function mouseReleased() {
 
   // Unselect a tile
   if (array_eq(selected_tile, TilePalette.Selected)) {
-    console.log("test!")
     for (const i in selected)
       if (array_eq(selected[i], tile_coord)) {
         selected.splice(i, 1);
