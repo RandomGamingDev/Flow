@@ -837,4 +837,6 @@ function mouseReleased() {
     board.setPixel(tile_coord, TilePalette.Tile);
     Sounds.Unselect.play();
   }
+
+  board.updatePixels();
 }
